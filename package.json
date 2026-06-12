@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "data:enrich": "node scripts/enrich-typewords.mjs",
+    "check:phonics": "node scripts/phonics-check.mjs",
     "check:visual": "node scripts/visual-check.mjs"
   },
   "dependencies": {

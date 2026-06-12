@@ -38,6 +38,7 @@ import {
 } from 'lucide-react'
 import { supabase } from './supabase'
 import { useCloudSync } from './useCloudSync'
+import { buildPhonicsCue } from './phonics'
 
 const STORAGE_KEY = 'word-sprint-state-v1'
 const DAY = 24 * 60 * 60 * 1000
@@ -69,21 +70,16 @@ function shuffle(list) {
   return [...list].sort(() => Math.random() - 0.5)
 }
 
-function buildCue(word) {
-  const parts = word.split(/[\s-]/)
-  if (parts.length > 1) return parts.join(' · ')
-  const suffixes = ['tion', 'ment', 'ness', 'able', 'ible', 'ful', 'less', 'ous', 'ive', 'ing', 'ed', 'ly', 'er']
-  const suffix = suffixes.find((item) => word.length > item.length + 3 && word.endsWith(item))
-  if (suffix) return `${word.slice(0, -suffix.length)} · ${suffix}`
-  const midpoint = Math.ceil(word.length / 2)
-  return `${word.slice(0, midpoint)} · ${word.slice(midpoint)}`
-}
-
 function cleanMeaning(word) {
   return word.trans.join('；').replace(/\b(modal|art|n|v|vt|vi|a|adj|ad|adv|prep|pron|conj|num|int)\.?\s*/gi, '').trim()
 }
 
 function getExample(word) {
+  const sourceExample = [...(word.sentences || [])]
+    .filter((item) => item.c && item.cn)
+    .sort((left, right) => left.c.length - right.c.length)[0]
+  if (sourceExample) return { english: sourceExample.c, chinese: sourceExample.cn }
+
   const meaning = cleanMeaning(word).split(/[；，,]/)[0]
   const entry = word.name
 
@@ -436,7 +432,7 @@ function Study({ words, state, setState, mode, navigate, toast }) {
           <h1>{word.name}</h1>
           <button className="phonetic" onClick={() => speak(word.name, state.speechRate)}>/ {word.usphone || '点击听发音'} / <Speaker size={17} /></button>
           <div className="memory-cue">
-            <small>拆分记忆</small><strong>{buildCue(word.name)}</strong>
+            <small>自然拼读</small><strong>{buildPhonicsCue(word.name, word.usphone)}</strong>
           </div>
         </div>
 
