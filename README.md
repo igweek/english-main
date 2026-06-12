@@ -1,6 +1,6 @@
 # 词冲
 
-面向高考英语词汇的本地优先背词 App。内置高考 3500 行业词表（实际 3893 个词条），支持美式发音、快速判断、拼写加固、生词回流、间隔复习和学习进度统计。
+面向高考英语词汇的本地优先背词 App。内置 TypeWords 高考 3500 词表（实际 3875 个词条），支持美式发音、快速判断、拼写加固、生词回流、间隔复习和学习进度统计。
 
 ## 运行
 
@@ -15,7 +15,7 @@ npm run dev
 - “没记住 / 有点模糊 / 我记住了”三级记忆反馈
 - 根据熟悉度自动安排 10 分钟、1 天、3 天、7 天、15 天和 30 天后的复习
 - 没记住的单词自动回流本轮队列并加入生词本
-- 每个词条提供 TypeWords 真实双语例句、丰富释义和语义记忆图
+- 每个词条使用 TypeWords 释义，并最多展示一条 TypeWords 双语例句
 - 完成每日词汇任务后进入集中拼写练习，只显示音标和读音提示
 - 基于音节、常见字母组合和前后缀的自然拼读提示
 - 搜索和熟悉度筛选
@@ -37,9 +37,8 @@ npm run dev
 
 ## 词表来源
 
-基础词表来自 [Qwerty Learner](https://github.com/RealKai42/qwerty-learner) 的
-[`GaoKao_3500.json`](https://github.com/RealKai42/qwerty-learner/blob/master/public/dicts/GaoKao_3500.json)，
-并使用 [TypeWords](https://github.com/zyronon/TypeWords) 的高考词库增强音标、释义和双语例句。
-两个来源均采用 GPL-3.0 许可。行业名称为“高考 3500”，数据文件实际包含 3893 个词条。
+词表直接使用 [TypeWords](https://github.com/zyronon/TypeWords) 的高考 3500 词库，
+保留美式音标、结构化中文释义，并为有例句的词条保留一条双语例句。
+TypeWords 采用 GPL-3.0 许可，数据文件包含 3875 个词条。
 
 本项目未复制任何商业背词产品的界面或受保护内容。

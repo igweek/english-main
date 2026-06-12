@@ -12,13 +12,9 @@ import {
   Clock3,
   Flame,
   Headphones,
-  Heart,
-  Home,
   Keyboard,
   LayoutDashboard,
-  Lightbulb,
   ListFilter,
-  MapPin,
   Menu,
   Pause,
   Play,
@@ -31,7 +27,6 @@ import {
   Speaker,
   Star,
   Target,
-  Users,
   Volume2,
   X,
   Zap,
@@ -70,79 +65,15 @@ function shuffle(list) {
   return [...list].sort(() => Math.random() - 0.5)
 }
 
-function cleanMeaning(word) {
-  return word.trans.join('；').replace(/\b(modal|art|n|v|vt|vi|a|adj|ad|adv|prep|pron|conj|num|int)\.?\s*/gi, '').trim()
-}
-
-function getExample(word) {
-  const sourceExample = [...(word.sentences || [])]
-    .filter((item) => item.c && item.cn)
-    .sort((left, right) => left.c.length - right.c.length)[0]
-  if (sourceExample) return { english: sourceExample.c, chinese: sourceExample.cn }
-
-  const meaning = cleanMeaning(word).split(/[；，,]/)[0]
-  const entry = word.name
-
-  if (/^modal\b/i.test(word.trans[0])) {
-    return { english: `We ${entry} finish this task together.`, chinese: `我们${meaning}一起完成这项任务。` }
-  }
-  if (/^(v|vt|vi)\./i.test(word.trans[0])) {
-    return { english: `They will ${entry} when the time is right.`, chinese: `时机合适时，他们会${meaning}。` }
-  }
-  if (/^(a|adj)\./i.test(word.trans[0])) {
-    return { english: `The result seems ${entry} to everyone.`, chinese: `这个结果在大家看来很${meaning}。` }
-  }
-  if (/^(ad|adv)\./i.test(word.trans[0])) {
-    return { english: `She answered the question ${entry}.`, chinese: `她${meaning}回答了这个问题。` }
-  }
-  if (/^(n|num)\./i.test(word.trans[0])) {
-    return { english: `The ${entry} is important in our daily life.`, chinese: `这个${meaning}在日常生活中很重要。` }
-  }
-  return { english: `Can you use “${entry}” in a short sentence?`, chinese: `你能用表示“${meaning}”的 ${entry} 造一个短句吗？` }
-}
-
-function getMemoryTheme(word) {
-  const meaning = cleanMeaning(word)
-  const themes = [
-    [/人|学生|老师|朋友|家庭|成员|孩子|男人|女人/, Users, '人物'],
-    [/爱|喜欢|快乐|高兴|感情|心|善良/, Heart, '感受'],
-    [/家|房|建筑|学校|教室|医院|商店/, Home, '地点'],
-    [/位置|地方|方向|路|街|城市|国家|世界|旅行/, MapPin, '方位'],
-    [/想|知道|理解|聪明|主意|知识|学习|思考/, Lightbulb, '想法'],
-    [/声音|说|听|音乐|唱|语言|读/, Volume2, '声音'],
-    [/时间|分钟|小时|日期|早|晚|过去|未来/, Clock3, '时间'],
-    [/火|热|光|太阳|能量|燃烧/, Flame, '能量'],
-    [/目标|成功|完成|达到|赢|比赛/, Target, '目标'],
-    [/书|文章|词|写|阅读|故事|纸/, BookOpen, '文字'],
-  ]
-  const match = themes.find(([pattern]) => pattern.test(meaning))
-  const hue = [...word.name].reduce((total, letter) => total + letter.charCodeAt(0), 0) % 360
-  return { Icon: match?.[1] || Sparkles, label: match?.[2] || '联想', hue }
-}
-
-function MemoryPicture({ word }) {
-  const { Icon, label, hue } = getMemoryTheme(word)
-  return (
-    <div className="memory-picture" style={{ '--memory-hue': hue }} aria-label={`${word.name} 的记忆图`}>
-      <i className="memory-orbit one" /><i className="memory-orbit two" />
-      <Icon size={42} strokeWidth={1.7} />
-      <span>{label}</span>
-      <small>{cleanMeaning(word).slice(0, 18)}</small>
-    </div>
-  )
-}
-
 function WordDetails({ word }) {
-  const example = getExample(word)
   return (
-    <div className="answer-area">
+    <div className={`answer-area ${word.example ? '' : 'without-example'}`}>
       <div className="meaning"><small>核心释义</small>{word.trans.map((text) => <p key={text}>{text}</p>)}</div>
-      <div className="example-block">
-        <small>语境例句</small>
-        <p>{example.english}</p>
-        <span>{example.chinese}</span>
-      </div>
-      <MemoryPicture word={word} />
+      {word.example && <div className="example-block">
+        <small>TypeWords 例句</small>
+        <p>{word.example.c}</p>
+        <span>{word.example.cn}</span>
+      </div>}
     </div>
   )
 }
@@ -202,7 +133,7 @@ function App() {
           ))}
         </nav>
         <div className="side-summary">
-          <div className="side-summary-top"><span>总进度</span><strong>{progress.seenCount}/{words.length || 3893}</strong></div>
+          <div className="side-summary-top"><span>总进度</span><strong>{progress.seenCount}/{words.length || 3875}</strong></div>
           <div className="thin-progress"><i style={{ width: `${progress.coverageExact}%` }} /></div>
           <p>每天多记一点，高考少慌一点。</p>
         </div>
@@ -642,7 +573,7 @@ function SettingsView({ state, setState, words, toast, cloud, openAuth }) {
         </div>
         <div className="setting-row source-row">
           <span className="metric-icon yellow"><BookOpen size={19} /></span>
-          <div><strong>当前词库</strong><small>高考 3500 · 实收 {words.length || 3893} 个词条 · 含美音音标与中文释义</small></div>
+          <div><strong>当前词库</strong><small>TypeWords 高考 3500 · 实收 {words.length || 3875} 个词条 · 仅美式音标</small></div>
           <span className="source-badge">GPL-3.0</span>
         </div>
       </section>
