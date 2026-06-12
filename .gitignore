@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.log
+*.png
+gaokao3500.source.json
+.env
+.env.local
