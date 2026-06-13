@@ -16,9 +16,11 @@ import {
   LayoutDashboard,
   ListFilter,
   Menu,
+  MessageSquareText,
   Pause,
   Play,
   RotateCcw,
+  RefreshCcw,
   Search,
   Settings,
   LogIn,
@@ -44,6 +46,7 @@ const defaultState = {
   learned: {},
   activity: {},
   sessionCount: 0,
+  sentenceCount: 0,
   speechRate: 0.85,
 }
 
@@ -63,6 +66,16 @@ function dayKey(date = new Date()) {
 
 function shuffle(list) {
   return [...list].sort(() => Math.random() - 0.5)
+}
+
+function sentenceTokens(sentence) {
+  return sentence.match(/[A-Za-z]+(?:['’][A-Za-z]+)*|\d+(?:[.,]\d+)*|[^\sA-Za-z\d]/g) || []
+}
+
+function joinSentence(tokens) {
+  return tokens.join(' ')
+    .replace(/\s+([,.;!?:"')\]])/g, '$1')
+    .replace(/([(“])\s+/g, '$1')
 }
 
 function loadLearnSession() {
@@ -131,6 +144,7 @@ function App() {
   const navItems = [
     ['dashboard', LayoutDashboard, '今日'],
     ['learn', Zap, '速记'],
+    ['sentence', MessageSquareText, '造句'],
     ['review', RotateCcw, '复习'],
     ['wordbook', BookMarked, '生词本'],
     ['stats', BarChart3, '进度'],
@@ -183,6 +197,7 @@ function App() {
         <main>
           {view === 'dashboard' && <Dashboard words={words} state={state} progress={progress} navigate={navigate} />}
           {view === 'learn' && <Study words={words} state={state} setState={setState} mode="learn" navigate={navigate} toast={setToast} />}
+          {view === 'sentence' && <SentencePractice words={words} state={state} setState={setState} navigate={navigate} />}
           {view === 'review' && <Study words={words} state={state} setState={setState} mode="review" navigate={navigate} toast={setToast} />}
           {view === 'wordbook' && <Wordbook words={words} state={state} setState={setState} toast={setToast} />}
           {view === 'stats' && <Stats words={words} state={state} progress={progress} />}
@@ -263,7 +278,8 @@ function Dashboard({ words, state, progress, navigate }) {
           <ol>
             <li><b>01</b><span><strong>需要时听音</strong><small>点击卡片右上角播放美式发音</small></span></li>
             <li><b>02</b><span><strong>快速判断</strong><small>3 秒内决定认识或模糊</small></span></li>
-            <li><b>03</b><span><strong>最后拼写</strong><small>完成今日词汇后，集中听音拼写</small></span></li>
+            <li><b>03</b><span><strong>主动造句</strong><small>把单词放回完整语境中使用</small></span></li>
+            <li><b>04</b><span><strong>最后拼写</strong><small>完成今日词汇后，集中听音拼写</small></span></li>
           </ol>
         </div>
       </section>
@@ -432,6 +448,162 @@ function Study({ words, state, setState, mode, navigate, toast }) {
   )
 }
 
+function SentencePractice({ words, state, setState, navigate }) {
+  const queue = useMemo(() => {
+    const candidates = words.filter((word) => {
+      const count = sentenceTokens(word.example?.c || '').length
+      return word.example?.c && word.example?.cn && count >= 3 && count <= 24
+    })
+    const prioritized = [
+      ...candidates.filter((word) => state.learned[word.name]?.hard),
+      ...candidates.filter((word) => state.learned[word.name] && !state.learned[word.name]?.hard),
+      ...candidates.filter((word) => !state.learned[word.name]),
+    ]
+    return shuffle([...new Map(prioritized.map((word) => [word.name, word])).values()]).slice(0, Math.min(20, state.dailyGoal))
+  }, [words])
+  const [index, setIndex] = useState(0)
+  const [tiles, setTiles] = useState([])
+  const [selected, setSelected] = useState([])
+  const [wrongId, setWrongId] = useState(null)
+  const [mistakes, setMistakes] = useState(0)
+  const [combo, setCombo] = useState(0)
+  const [recorded, setRecorded] = useState(false)
+  const word = queue[index]
+  const targetTokens = sentenceTokens(word?.example?.c || '')
+  const complete = Boolean(word && selected.length === targetTokens.length)
+
+  useEffect(() => {
+    if (!word) return
+    setTiles(shuffle(targetTokens.map((text, id) => ({ id, text }))))
+    setSelected([])
+    setWrongId(null)
+    setMistakes(0)
+    setRecorded(false)
+  }, [word?.name])
+
+  useEffect(() => {
+    if (!complete || recorded) return
+    const now = Date.now()
+    const current = state.learned[word.name] || { strength: 0, attempts: 0, hard: false, sentenceWins: 0 }
+    const strength = Math.min(6, (current.strength || 0) + 1)
+    const sentenceWins = (current.sentenceWins || 0) + 1
+    const learned = {
+      ...state.learned,
+      [word.name]: {
+        ...current,
+        strength,
+        attempts: (current.attempts || 0) + 1,
+        sentenceWins,
+        hard: sentenceWins >= 2 ? false : current.hard,
+        mastered: strength >= 3,
+        lastSeen: now,
+        nextReview: now + reviewIntervals[strength],
+      },
+    }
+    const today = dayKey()
+    const activity = {
+      ...state.activity,
+      [today]: Math.max(state.activity[today] || 0, Object.values(learned).filter((item) => dayKey(new Date(item.lastSeen)) === today).length),
+    }
+    setState({ ...state, learned, activity, sentenceCount: (state.sentenceCount || 0) + 1 })
+    setCombo((value) => mistakes === 0 ? value + 1 : 0)
+    setRecorded(true)
+  }, [complete, recorded])
+
+  function choose(tile) {
+    const expected = targetTokens[selected.length]
+    if (tile.text !== expected) {
+      setWrongId(tile.id)
+      setMistakes((value) => value + 1)
+      setTimeout(() => setWrongId(null), 350)
+      return
+    }
+    setTiles((current) => current.filter((item) => item.id !== tile.id))
+    setSelected((current) => [...current, tile])
+  }
+
+  function undo() {
+    const previous = selected.at(-1)
+    if (!previous || complete) return
+    setSelected((current) => current.slice(0, -1))
+    setTiles((current) => [...current, previous])
+  }
+
+  function reset() {
+    setTiles(shuffle(targetTokens.map((text, id) => ({ id, text }))))
+    setSelected([])
+    setWrongId(null)
+    setMistakes(0)
+  }
+
+  function next() {
+    setIndex((value) => value + 1)
+  }
+
+  if (!words.length) return <Loading />
+  if (!word) {
+    return (
+      <div className="page empty-study">
+        <span className="finish-mark"><MessageSquareText size={34} /></span>
+        <h1>这轮造句完成了</h1>
+        <p>你已经把高考词汇放进完整句子里主动使用了一遍。</p>
+        <button className="solid-button" onClick={() => navigate('dashboard')}>回到今日面板</button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="sentence-page">
+      <div className="sentence-toolbar">
+        <div><span>语境造句</span><strong>{index + 1} / {queue.length}</strong></div>
+        <div className="study-progress"><i style={{ width: `${(index / queue.length) * 100}%` }} /></div>
+        <span className="combo-badge"><Flame size={16} fill="currentColor" /> {combo} 连击</span>
+      </div>
+
+      <section className={`sentence-card ${complete ? 'complete' : ''}`}>
+        <div className="sentence-prompt">
+          <div>
+            <small>用这个高考词完成句子</small>
+            <h1>{word.name}</h1>
+            <span>/ {word.usphone || '暂无音标'} /</span>
+          </div>
+          <button className="sound-button" onClick={() => speak(word.name, state.speechRate)} aria-label="播放美式发音"><Volume2 size={21} /></button>
+        </div>
+
+        <div className="sentence-context">
+          <small>中文语境</small>
+          <p>{word.example.cn}</p>
+          <div className="sentence-meaning">{word.trans.slice(0, 2).map((text) => <span key={text}>{text}</span>)}</div>
+        </div>
+
+        <div className="sentence-answer">
+          <small>{complete ? '完成得很好' : '依次点击词块，组成完整英文句子'}</small>
+          <p>{selected.length ? joinSentence(selected.map((tile) => tile.text)) : '从下方选择第一个词块…'}</p>
+          {complete && <button onClick={() => speak(word.example.c, state.speechRate)}><Volume2 size={17} /> 听完整句子</button>}
+        </div>
+
+        {!complete ? (
+          <div className="sentence-builder">
+            <div className="sentence-tiles">
+              {tiles.map((tile) => <button key={tile.id} className={wrongId === tile.id ? 'wrong' : ''} onClick={() => choose(tile)}>{tile.text}</button>)}
+            </div>
+            <div className="sentence-tools">
+              <button onClick={undo} disabled={!selected.length}><RotateCcw size={16} /> 撤回</button>
+              <button onClick={reset}><RefreshCcw size={16} /> 重排</button>
+              <span>{mistakes ? `已即时纠正 ${mistakes} 次` : '保持连击：一次拼对'}</span>
+            </div>
+          </div>
+        ) : (
+          <div className="sentence-success">
+            <span><Check size={20} /> {mistakes === 0 ? '一次拼对，连击 +1' : '句子完成，错误已纠正'}</span>
+            <button className="solid-button" onClick={next}>下一句 <ArrowRight size={17} /></button>
+          </div>
+        )}
+      </section>
+    </div>
+  )
+}
+
 function SpellingPractice({ words, state, startIndex = 0, onProgress, onComplete }) {
   const [index, setIndex] = useState(startIndex)
   const [answer, setAnswer] = useState('')
@@ -573,7 +745,7 @@ function Stats({ words, state, progress }) {
       </section>
       <section className="insight-strip">
         <div><Flame size={21} /><span><small>最长连续</small><strong>{progress.streak} 天</strong></span></div>
-        <div><Zap size={21} /><span><small>累计判断</small><strong>{state.sessionCount} 次</strong></span></div>
+        <div><MessageSquareText size={21} /><span><small>完成造句</small><strong>{state.sentenceCount || 0} 句</strong></span></div>
         <div><BookMarked size={21} /><span><small>重点攻克</small><strong>{progress.hardCount} 词</strong></span></div>
         <div><Check size={21} /><span><small>稳定掌握</small><strong>{progress.masteredCount} 词</strong></span></div>
       </section>
@@ -760,7 +932,7 @@ function futureDate(days) {
 }
 
 function pageTitle(view) {
-  return { dashboard: '今日学习', learn: '极速记忆', review: '记忆回访', wordbook: '生词本', stats: '学习进度', settings: '学习设置' }[view]
+  return { dashboard: '今日学习', learn: '极速记忆', sentence: '语境造句', review: '记忆回访', wordbook: '生词本', stats: '学习进度', settings: '学习设置' }[view]
 }
 
 function syncLabel(status) {
