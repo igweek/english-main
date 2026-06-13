@@ -33,17 +33,17 @@ import {
 } from 'lucide-react'
 import { supabase } from './supabase'
 import { useCloudSync } from './useCloudSync'
-import { buildPhonicsCue } from './phonics'
 
 const STORAGE_KEY = 'word-sprint-state-v1'
+const LEARN_SESSION_KEY = 'word-sprint-learn-session-v1'
 const DAY = 24 * 60 * 60 * 1000
+let currentAudio = null
 
 const defaultState = {
   dailyGoal: 40,
   learned: {},
   activity: {},
   sessionCount: 0,
-  autoSpeak: true,
   speechRate: 0.85,
 }
 
@@ -65,12 +65,31 @@ function shuffle(list) {
   return [...list].sort(() => Math.random() - 0.5)
 }
 
+function loadLearnSession() {
+  try {
+    return JSON.parse(localStorage.getItem(LEARN_SESSION_KEY))
+  } catch {
+    return null
+  }
+}
+
+function saveLearnSession(queue, practiceWords, index, stage, spellingIndex = 0) {
+  localStorage.setItem(LEARN_SESSION_KEY, JSON.stringify({
+    date: dayKey(),
+    queue: queue.map((word) => word.name),
+    practiceWords: practiceWords.map((word) => word.name),
+    index,
+    stage,
+    spellingIndex,
+  }))
+}
+
 function WordDetails({ word }) {
   return (
     <div className={`answer-area ${word.example ? '' : 'without-example'}`}>
       <div className="meaning"><small>核心释义</small>{word.trans.map((text) => <p key={text}>{text}</p>)}</div>
       {word.example && <div className="example-block">
-        <small>TypeWords 例句</small>
+        <small>例句</small>
         <p>{word.example.c}</p>
         <span>{word.example.cn}</span>
       </div>}
@@ -242,7 +261,7 @@ function Dashboard({ words, state, progress, navigate }) {
         <div className="panel method-panel">
           <div className="panel-head"><div><small>记忆策略</small><h2>今天这样背</h2></div><Headphones size={22} /></div>
           <ol>
-            <li><b>01</b><span><strong>听音先行</strong><small>先让耳朵认出它，再看释义</small></span></li>
+            <li><b>01</b><span><strong>需要时听音</strong><small>点击卡片右上角播放美式发音</small></span></li>
             <li><b>02</b><span><strong>快速判断</strong><small>3 秒内决定认识或模糊</small></span></li>
             <li><b>03</b><span><strong>最后拼写</strong><small>完成今日词汇后，集中听音拼写</small></span></li>
           </ol>
@@ -259,10 +278,24 @@ function Study({ words, state, setState, mode, navigate, toast }) {
   const [revealed, setRevealed] = useState(false)
   const [paused, setPaused] = useState(false)
   const [stage, setStage] = useState('study')
+  const [spellingIndex, setSpellingIndex] = useState(0)
   const isReview = mode === 'review'
 
   useEffect(() => {
     if (!words.length) return
+    const byName = new Map(words.map((word) => [word.name, word]))
+    const saved = isReview ? null : loadLearnSession()
+    if (saved?.date === dayKey() && Array.isArray(saved.queue) && Array.isArray(saved.practiceWords)) {
+      const savedQueue = saved.queue.map((name) => byName.get(name)).filter(Boolean)
+      const savedPracticeWords = saved.practiceWords.map((name) => byName.get(name)).filter(Boolean)
+      setQueue(savedQueue)
+      setPracticeWords(savedPracticeWords)
+      setIndex(Math.min(saved.index || 0, savedQueue.length))
+      setStage(saved.stage || 'study')
+      setSpellingIndex(Math.min(saved.spellingIndex || 0, Math.max(0, savedPracticeWords.length - 1)))
+      return
+    }
+
     const now = Date.now()
     const source = isReview
       ? words.filter((word) => state.learned[word.name]?.nextReview <= now || state.learned[word.name]?.hard)
@@ -272,13 +305,14 @@ function Study({ words, state, setState, mode, navigate, toast }) {
     setPracticeWords(isReview ? [] : nextQueue)
     setIndex(0)
     setStage('study')
+    setSpellingIndex(0)
+    if (!isReview) saveLearnSession(nextQueue, nextQueue, 0, 'study')
   }, [words, mode])
 
   const word = queue[index]
 
   useEffect(() => {
     setRevealed(false)
-    if (word && state.autoSpeak && !paused) setTimeout(() => speak(word.name, state.speechRate), 250)
   }, [index, word?.name])
 
   useEffect(() => {
@@ -318,18 +352,33 @@ function Study({ words, state, setState, mode, navigate, toast }) {
       ...state.activity,
       [today]: Math.max(state.activity[today] || 0, Object.values(learned).filter((item) => dayKey(new Date(item.lastSeen)) === today).length),
     }
+    const nextQueue = score === 0 ? [...queue, word] : queue
+    const nextIndex = index + 1
     setState({ ...state, learned, activity, sessionCount: state.sessionCount + 1 })
     if (score === 0) {
-      setQueue((currentQueue) => [...currentQueue, word])
       toast('已加入生词本，稍后再见')
     }
-    setIndex((value) => value + 1)
+    setQueue(nextQueue)
+    setIndex(nextIndex)
+    if (!isReview) saveLearnSession(nextQueue, practiceWords, nextIndex, 'study', spellingIndex)
   }
 
   if (!words.length) return <Loading />
   if (!word) {
     if (!isReview && stage === 'study' && practiceWords.length) {
-      return <SpellingPractice words={practiceWords} state={state} onComplete={() => setStage('done')} />
+      return <SpellingPractice
+        words={practiceWords}
+        state={state}
+        startIndex={spellingIndex}
+        onProgress={(nextIndex) => {
+          setSpellingIndex(nextIndex)
+          saveLearnSession(queue, practiceWords, index, 'study', nextIndex)
+        }}
+        onComplete={() => {
+          setStage('done')
+          saveLearnSession(queue, practiceWords, index, 'done', practiceWords.length)
+        }}
+      />
     }
     return (
       <div className="page empty-study">
@@ -357,14 +406,11 @@ function Study({ words, state, setState, mode, navigate, toast }) {
       <div className={`study-card ${revealed ? 'revealed' : ''}`}>
         <div className="word-topline">
           <span>高考核心词 · {String(words.findIndex((item) => item.name === word.name) + 1).padStart(4, '0')}</span>
-          <button className="sound-button" onClick={() => speak(word.name, state.speechRate)}><Volume2 size={20} /> 美音</button>
+          <button className="sound-button" onClick={() => speak(word.name, state.speechRate)} aria-label="播放美式发音" title="播放美式发音"><Volume2 size={20} /></button>
         </div>
         <div className="word-main">
           <h1>{word.name}</h1>
-          <button className="phonetic" onClick={() => speak(word.name, state.speechRate)}>/ {word.usphone || '点击听发音'} / <Speaker size={17} /></button>
-          <div className="memory-cue">
-            <small>自然拼读</small><strong>{buildPhonicsCue(word.name, word.usphone)}</strong>
-          </div>
+          <span className="phonetic">/ {word.usphone || '暂无音标'} /</span>
         </div>
 
         {!revealed ? (
@@ -386,8 +432,8 @@ function Study({ words, state, setState, mode, navigate, toast }) {
   )
 }
 
-function SpellingPractice({ words, state, onComplete }) {
-  const [index, setIndex] = useState(0)
+function SpellingPractice({ words, state, startIndex = 0, onProgress, onComplete }) {
+  const [index, setIndex] = useState(startIndex)
   const [answer, setAnswer] = useState('')
   const [checked, setChecked] = useState(null)
   const inputRef = useRef(null)
@@ -396,15 +442,16 @@ function SpellingPractice({ words, state, onComplete }) {
   useEffect(() => {
     setAnswer('')
     setChecked(null)
-    if (word) {
-      setTimeout(() => speak(word.name, state.speechRate), 250)
-      setTimeout(() => inputRef.current?.focus(), 100)
-    }
+    if (word) setTimeout(() => inputRef.current?.focus(), 100)
   }, [index, word?.name])
 
   function next() {
     if (index + 1 >= words.length) onComplete()
-    else setIndex((value) => value + 1)
+    else {
+      const nextIndex = index + 1
+      setIndex(nextIndex)
+      onProgress?.(nextIndex)
+    }
   }
 
   function check() {
@@ -538,6 +585,7 @@ function SettingsView({ state, setState, words, toast, cloud, openAuth }) {
   const [goal, setGoal] = useState(state.dailyGoal)
   function reset() {
     if (window.confirm('确定清空全部学习记录吗？词表不会被删除。')) {
+      localStorage.removeItem(LEARN_SESSION_KEY)
       setState(defaultState)
       toast('学习记录已清空')
     }
@@ -560,11 +608,6 @@ function SettingsView({ state, setState, words, toast, cloud, openAuth }) {
           <span className="metric-icon coral"><Target size={19} /></span>
           <div><strong>每日新词目标</strong><small>决定每天速记队列的长度</small></div>
           <div className="stepper"><button onClick={() => setGoal(Math.max(10, goal - 10))}>−</button><b>{goal}</b><button onClick={() => setGoal(Math.min(200, goal + 10))}>+</button></div>
-        </div>
-        <div className="setting-row">
-          <span className="metric-icon blue"><Volume2 size={19} /></span>
-          <div><strong>出现单词时自动发音</strong><small>优先调用设备中的 en-US 美式语音</small></div>
-          <button className={`toggle ${state.autoSpeak ? 'on' : ''}`} onClick={() => setState({ ...state, autoSpeak: !state.autoSpeak })}><i /></button>
         </div>
         <div className="setting-row range-row">
           <span className="metric-icon green"><Headphones size={19} /></span>
@@ -636,6 +679,19 @@ function Loading() {
 }
 
 function speak(text, rate = 0.85) {
+  currentAudio?.pause()
+  currentAudio = new Audio(`https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(text)}&type=2`)
+  let fellBack = false
+  const fallback = () => {
+    if (fellBack) return
+    fellBack = true
+    speakWithDeviceVoice(text, rate)
+  }
+  currentAudio.addEventListener('error', fallback, { once: true })
+  currentAudio.play().catch(fallback)
+}
+
+function speakWithDeviceVoice(text, rate = 0.85) {
   if (!('speechSynthesis' in window)) return
   window.speechSynthesis.cancel()
   const utterance = new SpeechSynthesisUtterance(text)
