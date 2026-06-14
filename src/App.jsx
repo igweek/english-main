@@ -387,6 +387,8 @@ function Study({ words, state, setState, mode, navigate, toast }) {
       return <SpellingPractice
         words={practiceWords}
         state={state}
+        setState={setState}
+        toast={toast}
         startIndex={spellingIndex}
         onProgress={(nextIndex) => {
           setSpellingIndex(nextIndex)
@@ -601,20 +603,66 @@ function SentencePractice({ words, state, setState, navigate }) {
   )
 }
 
-function SpellingPractice({ words, state, startIndex = 0, onProgress, onComplete }) {
+function SpellingPractice({ words, state, setState, toast, startIndex = 0, onProgress, onComplete }) {
   const [index, setIndex] = useState(startIndex)
   const [answer, setAnswer] = useState('')
   const [checked, setChecked] = useState(null)
+  const [mistakes, setMistakes] = useState(0)
   const inputRef = useRef(null)
   const word = words[index]
 
   useEffect(() => {
     setAnswer('')
     setChecked(null)
+    setMistakes(0)
     if (word) setTimeout(() => inputRef.current?.focus(), 100)
   }, [index, word?.name])
 
-  function next() {
+  function saveResult(result) {
+    const now = Date.now()
+    const current = state.learned[word.name] || { strength: 0, attempts: 0, hard: false }
+    const skipped = result === 'skipped'
+    const learned = {
+      ...state.learned,
+      [word.name]: {
+        ...current,
+        strength: skipped && mistakes === 0 ? Math.max(0, (current.strength || 0) - 1) : current.strength || 0,
+        hard: skipped ? true : current.hard,
+        remembered: skipped ? false : current.remembered,
+        mastered: skipped ? false : current.mastered,
+        spellingAttempts: (current.spellingAttempts || 0) + 1,
+        spellingWins: (current.spellingWins || 0) + (result === 'correct' ? 1 : 0),
+        spellingSkips: (current.spellingSkips || 0) + (result === 'skipped' ? 1 : 0),
+        lastSpelling: now,
+        lastSpellingResult: result,
+        nextReview: failed ? now : current.nextReview,
+      },
+    }
+    setState({ ...state, learned })
+  }
+
+  function saveMistake() {
+    const now = Date.now()
+    const current = state.learned[word.name] || { strength: 0, attempts: 0, hard: false }
+    const learned = {
+      ...state.learned,
+      [word.name]: {
+        ...current,
+        strength: mistakes === 0 ? Math.max(0, (current.strength || 0) - 1) : current.strength || 0,
+        hard: true,
+        remembered: false,
+        mastered: false,
+        spellingMistakes: (current.spellingMistakes || 0) + 1,
+        lastSpelling: now,
+        lastSpellingResult: 'incorrect',
+        nextReview: now,
+      },
+    }
+    setState({ ...state, learned })
+  }
+
+  function next(result) {
+    saveResult(result)
     if (index + 1 >= words.length) onComplete()
     else {
       const nextIndex = index + 1
@@ -627,7 +675,22 @@ function SpellingPractice({ words, state, startIndex = 0, onProgress, onComplete
     if (!answer.trim()) return
     const success = answer.trim().toLowerCase() === word.name.toLowerCase()
     setChecked(success)
-    if (success) setTimeout(next, 450)
+    if (success) setTimeout(() => next('correct'), 450)
+    else {
+      saveMistake()
+      setMistakes((value) => value + 1)
+    }
+  }
+
+  function skip() {
+    saveResult('skipped')
+    toast?.('已记录为薄弱词，并加入生词本')
+    if (index + 1 >= words.length) onComplete()
+    else {
+      const nextIndex = index + 1
+      setIndex(nextIndex)
+      onProgress?.(nextIndex)
+    }
   }
 
   return (
@@ -663,7 +726,7 @@ function SpellingPractice({ words, state, startIndex = 0, onProgress, onComplete
         <p className={checked === false ? 'spelling-feedback show' : 'spelling-feedback'}>
           拼写还不对，再听一次试试。
         </p>
-        <button className="skip-spelling" onClick={next}>暂时跳过</button>
+        <button className="skip-spelling" onClick={skip}>暂时跳过</button>
       </section>
     </div>
   )
