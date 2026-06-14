@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "data:enrich": "node scripts/enrich-typewords.mjs",
+    "data:simplify": "node scripts/simplify-vocabulary.mjs",
     "check:visual": "node scripts/visual-check.mjs"
   },
   "dependencies": {

@@ -1,6 +1,5 @@
-import { writeFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 
-const SOURCE_URL = 'https://files.typewords.cc/dicts/en/word/GaoKao_3500.json'
 const TARGET_PATH = new URL('../public/data/gaokao3500.json', import.meta.url)
 const RARE_LABEL = /<(?:古|旧|史|非正式|方|文|书面)[^>]*>/
 const SPECIAL_TRANSLATIONS = {
@@ -47,8 +46,17 @@ function removeParenthetical(text) {
   return result
 }
 
-function simplifyMeaning(text) {
-  const meanings = String(text || '')
+function fallbackPos(word) {
+  if (SPECIAL_POS[word]) return SPECIAL_POS[word]
+  return /[\s&=-]/.test(word) ? 'phr.' : 'n.'
+}
+
+function simplifyTranslation(translation, word) {
+  const match = translation.match(/^(\S+)\s+(.+)$/)
+  if (match?.[1] === '【名】' || /[人姓]名/.test(translation)) return ''
+  const pos = match ? match[1] : fallbackPos(word)
+  const sourceMeaning = match ? match[2] : translation
+  const meanings = sourceMeaning
     .split(/[；;]/)
     .filter((item) => item && !RARE_LABEL.test(item))
     .map((item) => removeParenthetical(item)
@@ -58,46 +66,23 @@ function simplifyMeaning(text) {
       .replace(/^[，、；:：\s]+|[，、；:：\s]+$/g, '')
       .trim())
     .filter((item) => item && item !== 'undefined' && item.length <= 28)
-  return [...new Set(meanings)].slice(0, 3).join('；')
+  const concise = [...new Set(meanings)].slice(0, 3)
+  return concise.length ? `${pos} ${concise.join('；')}` : ''
 }
 
-function fallbackPos(word) {
-  if (SPECIAL_POS[word]) return SPECIAL_POS[word]
-  return /[\s&=-]/.test(word) ? 'phr.' : 'n.'
-}
-
-function simplifyTranslations(translations, word) {
-  if (!translations?.length) return []
-  const valid = translations.filter((item) => item?.cn && item.pos !== '【名】' && !/[人姓]名/.test(item.cn))
-  const structured = valid.filter((item) => item.pos)
-  return (structured.length ? structured : valid)
-    .map((item) => ({ pos: item.pos?.trim(), meaning: simplifyMeaning(item.cn) }))
-    .filter((item) => item.meaning)
-    .slice(0, 4)
-    .map((item) => `${item.pos || fallbackPos(word)} ${item.meaning}`)
-}
-
-const typeWords = await fetch(SOURCE_URL).then((response) => {
-  if (!response.ok) throw new Error(`TypeWords download failed: ${response.status}`)
-  return response.json()
-})
-let sentenceCount = 0
-const words = typeWords.map((source) => {
-  const translations = SPECIAL_TRANSLATIONS[source.word] || simplifyTranslations(source.trans, source.word)
-  const example = (source.sentences || []).find((item) => item.c && item.cn)
-  if (example) sentenceCount += 1
-
+const words = JSON.parse(await readFile(TARGET_PATH, 'utf8')).map((word) => {
+  const usable = word.trans.filter((translation) => !/^【名】/.test(translation) && !/[人姓]名/.test(translation))
+  const structured = usable.filter((translation) => /^(\S+)\s+(.+)$/.test(translation))
+  const source = structured.length ? structured : usable
   return {
-    name: source.word,
-    usphone: source.phonetic0 || '',
-    trans: translations,
-    ...(example ? { example: { c: example.c, cn: example.cn } } : {}),
+    ...word,
+    trans: SPECIAL_TRANSLATIONS[word.name] || source.map((translation) => simplifyTranslation(translation, word.name)).filter(Boolean).slice(0, 4),
   }
 })
 
 await writeFile(TARGET_PATH, `${JSON.stringify(words, null, 2)}\n`)
 console.log(JSON.stringify({
   entries: words.length,
-  entriesWithSentences: sentenceCount,
-  source: SOURCE_URL,
+  translations: words.reduce((sum, word) => sum + word.trans.length, 0),
+  entriesWithoutTranslations: words.filter((word) => !word.trans.length).length,
 }, null, 2))
