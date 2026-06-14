@@ -643,6 +643,10 @@ function SpellingPractice({ words, state, startIndex = 0, onProgress, onComplete
         <button className="spelling-phonetic" onClick={() => speak(word.name, state.speechRate)}>
           / {word.usphone || '点击听发音'} / <Speaker size={20} />
         </button>
+        <div className="spelling-meaning">
+          <small>中文释义</small>
+          {word.trans.map((text) => <p key={text}>{text}</p>)}
+        </div>
         <div className={`spelling-input ${checked === false ? 'wrong' : checked === true ? 'correct' : ''}`}>
           <input
             ref={inputRef}

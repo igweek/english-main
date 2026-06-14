@@ -148,7 +148,10 @@ main { min-height: calc(100vh - 78px); }
 .spelling-card > small { margin-top: 16px; color: var(--muted); font-size: 10px; }
 .spelling-phonetic { margin-top: 22px; border: 0; background: transparent; color: var(--ink); display: flex; align-items: center; gap: 10px; font: 700 clamp(24px, 5vw, 34px) 'DM Sans', sans-serif; }
 .spelling-phonetic svg { color: var(--accent); }
-.spelling-input { width: min(390px, 100%); height: 48px; margin-top: 28px; display: flex; overflow: hidden; border: 1px solid var(--line); border-radius: 7px; background: #fafbf9; }
+.spelling-meaning { width: min(440px, 100%); margin-top: 22px; padding: 13px 15px; border-radius: 7px; background: #f4f8f5; border: 1px solid #dceae1; text-align: left; }
+.spelling-meaning small { color: var(--green); font-size: 9px; font-weight: 700; }
+.spelling-meaning p { margin: 5px 0 0; color: var(--ink); font-size: 11px; font-weight: 600; line-height: 1.55; }
+.spelling-input { width: min(390px, 100%); height: 48px; margin-top: 22px; display: flex; overflow: hidden; border: 1px solid var(--line); border-radius: 7px; background: #fafbf9; }
 .spelling-input.correct { border-color: var(--green); }
 .spelling-input.wrong { border-color: var(--accent); animation: shake .25s linear; }
 .spelling-input input { min-width: 0; flex: 1; border: 0; outline: 0; padding: 0 14px; background: transparent; font: 700 15px 'DM Sans', sans-serif; letter-spacing: .04em; }
