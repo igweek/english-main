@@ -166,7 +166,7 @@ function App() {
           ))}
         </nav>
         <div className="side-summary">
-          <div className="side-summary-top"><span>总进度</span><strong>{progress.seenCount}/{words.length || 3875}</strong></div>
+          <div className="side-summary-top"><span>总进度</span><strong>{progress.rememberedCount}/{words.length || 3875}</strong></div>
           <div className="thin-progress"><i style={{ width: `${progress.coverageExact}%` }} /></div>
           <p>每天多记一点，高考少慌一点。</p>
         </div>
@@ -243,8 +243,8 @@ function Dashboard({ words, state, progress, navigate }) {
 
       <section className="metric-grid">
         <div className="metric">
-          <span className="metric-icon coral"><BookOpen size={19} /></span><small>已见过</small>
-          <strong>{progress.seenCount}</strong><p>覆盖词表 {progress.coverage}%</p>
+          <span className="metric-icon coral"><BookOpen size={19} /></span><small>已记住</small>
+          <strong>{progress.rememberedCount}</strong><p>覆盖词表 {progress.coverage}%</p>
         </div>
         <div className="metric">
           <span className="metric-icon green"><Check size={19} /></span><small>已掌握</small>
@@ -358,7 +358,9 @@ function Study({ words, state, setState, mode, navigate, toast }) {
         strength,
         attempts: current.attempts + 1,
         hard,
-        mastered: strength >= 3,
+        remembered: score === 2,
+        rememberedAt: score === 2 ? now : current.rememberedAt,
+        mastered: score === 2 && strength >= 3,
         lastSeen: now,
         nextReview: now + reviewIntervals[strength],
       },
@@ -366,7 +368,7 @@ function Study({ words, state, setState, mode, navigate, toast }) {
     const today = dayKey()
     const activity = {
       ...state.activity,
-      [today]: Math.max(state.activity[today] || 0, Object.values(learned).filter((item) => dayKey(new Date(item.lastSeen)) === today).length),
+      [today]: Object.values(learned).filter((item) => item.remembered && item.rememberedAt && dayKey(new Date(item.rememberedAt)) === today).length,
     }
     const nextQueue = score === 0 ? [...queue, word] : queue
     const nextIndex = index + 1
@@ -495,17 +497,12 @@ function SentencePractice({ words, state, setState, navigate }) {
         attempts: (current.attempts || 0) + 1,
         sentenceWins,
         hard: sentenceWins >= 2 ? false : current.hard,
-        mastered: strength >= 3,
+        mastered: current.mastered || false,
         lastSeen: now,
         nextReview: now + reviewIntervals[strength],
       },
     }
-    const today = dayKey()
-    const activity = {
-      ...state.activity,
-      [today]: Math.max(state.activity[today] || 0, Object.values(learned).filter((item) => dayKey(new Date(item.lastSeen)) === today).length),
-    }
-    setState({ ...state, learned, activity, sentenceCount: (state.sentenceCount || 0) + 1 })
+    setState({ ...state, learned, sentenceCount: (state.sentenceCount || 0) + 1 })
     setCombo((value) => mistakes === 0 ? value + 1 : 0)
     setRecorded(true)
   }, [complete, recorded])
@@ -879,19 +876,21 @@ function speakWithDeviceVoice(text, rate = 0.85) {
 
 function getProgress(words, state) {
   const records = Object.values(state.learned)
-  const todayCount = records.filter((item) => item.lastSeen && dayKey(new Date(item.lastSeen)) === dayKey()).length
-  const masteredCount = records.filter((item) => item.mastered).length
+  const rememberedRecords = records.filter((item) => item.remembered === true)
+  const todayCount = rememberedRecords.filter((item) => item.rememberedAt && dayKey(new Date(item.rememberedAt)) === dayKey()).length
+  const masteredCount = rememberedRecords.filter((item) => item.mastered).length
   const dueCount = records.filter((item) => item.nextReview <= Date.now() || item.hard).length
   const hardCount = records.filter((item) => item.hard).length
-  const remaining = Math.max(0, words.length - records.length)
+  const rememberedCount = rememberedRecords.length
+  const remaining = Math.max(0, words.length - rememberedCount)
   return {
     todayCount,
     masteredCount,
     dueCount,
     hardCount,
-    seenCount: records.length,
-    coverage: words.length ? Number((records.length / words.length * 100).toFixed(1)) : 0,
-    coverageExact: words.length ? records.length / words.length * 100 : 0,
+    rememberedCount,
+    coverage: words.length ? Number((rememberedCount / words.length * 100).toFixed(1)) : 0,
+    coverageExact: words.length ? rememberedCount / words.length * 100 : 0,
     percent: words.length ? Number((masteredCount / words.length * 100).toFixed(1)) : 0,
     daysLeft: Math.max(1, Math.ceil(remaining / state.dailyGoal)),
     streak: getStreak(state.activity),
